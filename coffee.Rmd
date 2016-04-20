@@ -1,0 +1,80 @@
+---
+title: "Coffee Clustering"
+author: "Jeremy Leipzig"
+date: "April 19, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem 8.10 Estimating coffee competition in market segments
+
+**What measure would you use to reflect the level of competition between different instant coffee alternatives?**
+Consumers who rotate between the same two or three coffees should form market segments. To identify these segments we can use cluster analysis and discover which are the tightest clusters - these would presumably be highly competitive zero-sum markets.
+
+```{r coffee,message=FALSE}
+library(proxy)
+library(pvclust)
+library(useful)
+library(ggfortify)
+
+coffee<-read.table("COFFEE.txt",header=FALSE)
+row.names(coffee)<-coffee$V1
+coffee <- coffee[,2:12]
+coffee<-as.matrix(coffee)
+colnames(coffee)<-row.names(coffee)
+coffee_t<-t(coffee)
+coffee_inv<-1-cor(coffee_t)
+coffee_inv_df<-as.data.frame(coffee_inv)
+coffee_dist<-as.dist(coffee_inv)
+```
+
+## Heatmap of coffee dissimilarity matrix
+```{r dist}
+heatmap(coffee_inv)
+```
+
+## Hierarchical clustering with `pvclust`
+Pvclust uses bootstrap resampling to estimate the probability a cluster is real. This can help us determine the number of clusters to request for a k-means clustering.
+
+```{r pvclust,message=FALSE}
+#needs dissimilarity matrix
+coffeeclust<-pvclust(cor(coffee_t),method.dist="correlation", method.hclust="ward", nboot=1000)
+plot(coffeeclust)
+```
+
+```{r choosek}
+# i am going with k of ?
+k<-5
+```
+
+## K-means clustering
+I went with k of `r k`
+```{r kmeans}
+kmres<-kmeans(coffee_dist,k)
+pk<-plot.kmeans(kmres,data=coffee_inv)
+```
+
+```{r decomp}
+mds<-as.data.frame(cmdscale(coffee_dist))
+colnames(mds)<-c("C1","C2")
+pca<-prcomp(coffee_inv)
+pca.results <- data.frame(kmres$cluster, names(kmres$cluster), pca$rotation)
+mds.results <- data.frame(kmres$cluster, names(kmres$cluster), mds)
+ggplot(pca.results,aes(PC1,PC2,label=names.kmres.cluster.))+geom_point(aes(color=as.character(kmres.cluster)))+geom_label(nudge_x=.05,nudge_y=.04)
+#ggplot(mds.results,aes(C1,C2,label=names.kmres.cluster.))+geom_point(aes(color=as.factor(kmres.cluster)))+geom_label(nudge_x=.1,nudge_y=.03)
+```
+
+The level of competition within a cluster is high (even if the coffees are from the same brand).
+
+The within cluster sum of squares is a measure of the local intensity (smaller = more intense).
+
+```{r pressure, echo=FALSE}
+clusters<-data.frame(cluster=1:k,ss=kmres$withinss)
+clusters$members<-sapply(1:k,function(x){paste(names(which(kmres$cluster==x)),collapse = ", ")})
+knitr::kable(clusters)
+```
+
+It appears clusters `r clusters$cluster[order(clusters$ss)[1]]` and `r clusters$cluster[order(clusters$ss)[2]]` are particularly competitive
